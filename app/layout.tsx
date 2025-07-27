@@ -38,9 +38,6 @@ html {
       <body suppressHydrationWarning>
         <ThemeProvider attribute="class" defaultTheme="dark" enableSystem={false}>
           <LanguageProvider>
-            <div style={{ position: 'fixed', top: 16, right: 16, zIndex: 1000 }}>
-              <ThemeToggleButton />
-            </div>
             {children}
           </LanguageProvider>
         </ThemeProvider>

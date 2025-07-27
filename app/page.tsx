@@ -21,6 +21,7 @@ import {
 import { fetchPostsFromApi, ApiPost, PostSource } from "@/lib/api";
 import { useLanguage } from "@/contexts/LanguageContext";
 import { LanguageSelector } from "@/components/LanguageSelector";
+import { ThemeToggleButton } from "./ThemeToggleButton";
 
 // Constants
 const SOURCES: { label: string; value: PostSource }[] = [
@@ -62,6 +63,8 @@ export default function Home() {
   const [hasInitialSearch, setHasInitialSearch] = useState(true);
   const [showCopyMessage, setShowCopyMessage] = useState(false);
   const [showArtistCopyMessage, setShowArtistCopyMessage] = useState(false);
+  const [isDownloading, setIsDownloading] = useState(false);
+  const [downloadCancelled, setDownloadCancelled] = useState(false);
   const [searchHistory, setSearchHistory] = useState<{terms: string[], source: PostSource, timestamp: number}[]>([]);
   const [currentPostIndex, setCurrentPostIndex] = useState(0);
   const [pageInput, setPageInput] = useState("");
@@ -86,14 +89,15 @@ export default function Home() {
           orderBy,
           filterBy,
         });
-        console.log('Got posts:', { count: posts?.length });
-        if (!posts || posts.length === 0) {
+        // Si la respuesta es un objeto con posts, usa posts.posts
+        let postsArray = Array.isArray(posts) ? posts : (Array.isArray(posts?.posts) ? posts.posts : []);
+        console.log('Got posts:', { count: postsArray?.length });
+        if (!postsArray || postsArray.length === 0) {
           setError(t('noResults'));
           setPosts([]);
         } else {
           setError(null);
-          setPosts(posts);
-          
+          setPosts(postsArray);
           // Add to search history if there are search terms
           if (searchTerms.length > 0) {
             const newEntry = {
@@ -101,7 +105,6 @@ export default function Home() {
               source: selectedSource,
               timestamp: Date.now()
             };
-            
             setSearchHistory(prev => {
               // Remove duplicates and keep only last 10 searches
               const filtered = prev.filter(entry => 
@@ -181,7 +184,7 @@ export default function Home() {
       try {
         const response = await fetch(`/api/posts/suggestions?term=${searchValue}&source=${selectedSource}`);
         const data = await response.json();
-        setSuggestions(data);
+        setSuggestions(Array.isArray(data) ? data : []);
       } catch (error) {
         console.error('Error fetching suggestions:', error);
         setSuggestions([]);
@@ -386,8 +389,36 @@ export default function Home() {
     setCurrentPostIndex(index);
   };
 
+  // Fetch posts from the new API route
+  useEffect(() => {
+    const fetchPosts = async () => {
+      setLoading(true);
+      setError(null);
+      try {
+        const response = await fetch("/api/posts");
+        if (!response.ok) {
+          throw new Error("Failed to fetch posts");
+        }
+        const data = await response.json();
+        setPosts(data);
+      } catch (err) {
+        setError(err.message);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchPosts();
+  }, []);
+
   return (
     <main className="flex flex-col items-stretch min-h-screen w-full max-w-7xl mx-auto p-4 relative">
+      {/* Theme Toggle Button en la esquina superior derecha, solo si no hay post seleccionado */}
+      {!selectedPost && (
+        <div style={{ position: 'absolute', top: 16, right: 16, zIndex: 1000 }}>
+          <ThemeToggleButton />
+        </div>
+      )}
       {/* Top Navigation Bar */}
       <div className="flex justify-between items-center mb-4">
         <div className="flex items-center gap-2">
@@ -401,7 +432,8 @@ export default function Home() {
           {navigationMessage}
         </div>
       )}
-      
+
+
       {/* Search Form */}
       <form
         onSubmit={(e) => {
@@ -439,7 +471,6 @@ export default function Home() {
                   </button>
                 )}
               </div>
-              
               {/* Sugerencias */}
               {searchValue && (
                 <Card className="absolute w-full mt-1 z-50 max-h-60">
@@ -451,18 +482,24 @@ export default function Home() {
                     />
                     <CommandList className="max-h-48 overflow-y-auto">
                       <CommandGroup>
-                        {suggestions?.map((tag) => (
-                          <CommandItem
-                            key={tag}
-                            value={tag}
-                            onSelect={() => {
-                              addSearchTerm(tag);
-                            }}
-                            className="cursor-pointer"
-                          >
-                            <Tag className="w-4 h-4 mr-2" />
-                            {tag}
-                          </CommandItem>
+                        {loadingSuggestions ? (
+                          <div className="px-4 py-2 text-sm text-muted-foreground">Buscando...</div>
+                        ) : (Array.isArray(suggestions) && suggestions.length === 0 ? (
+                          <div className="px-4 py-2 text-sm text-muted-foreground">No hay coincidencias</div>
+                        ) : (
+                          (Array.isArray(suggestions) ? suggestions : []).map((tag) => (
+                            <CommandItem
+                              key={tag}
+                              value={tag}
+                              onSelect={() => {
+                                addSearchTerm(tag);
+                              }}
+                              className="cursor-pointer"
+                            >
+                              <Tag className="w-4 h-4 mr-2" />
+                              {tag}
+                            </CommandItem>
+                          ))
                         ))}
                       </CommandGroup>
                     </CommandList>
@@ -994,28 +1031,70 @@ export default function Home() {
                   )}
                   <Button
                     variant="outline"
-                    className="flex-1 hover:bg-purple-500/20"
-                    onClick={() => {
+                    className={`flex-1 hover:bg-purple-500/20 relative ${isDownloading ? 'opacity-60 cursor-not-allowed' : ''}`}
+                    disabled={isDownloading}
+                    onClick={async () => {
                       if (!selectedPost?.file_url) return;
-                      // Detectar extensión
+                      setIsDownloading(true);
+                      setDownloadCancelled(false);
                       let ext = 'file';
                       if (selectedPost.file_url.includes('.')) {
                         ext = selectedPost.file_url.split('.').pop()?.split('?')[0] || 'file';
                       }
                       const filename = `post_${selectedPost.id}.${ext}`;
-                      // Usar el endpoint proxy del backend para descargar
-                      const proxyUrl = `/api/download?url=${encodeURIComponent(selectedPost.file_url)}`;
-                      const link = document.createElement('a');
-                      link.href = proxyUrl;
-                      link.download = filename;
-                      document.body.appendChild(link);
-                      link.click();
-                      document.body.removeChild(link);
+                      let cancelled = false;
+                      try {
+                        const controller = new AbortController();
+                        // Descargar usando el endpoint backend para evitar CSP
+                        const responsePromise = fetch(`/api/download?url=${encodeURIComponent(selectedPost.file_url)}`, { signal: controller.signal });
+                        // Si el usuario cierra la ventana de descarga, cancelar
+                        const timeout = setTimeout(() => {
+                          if (!isDownloading) return;
+                          controller.abort();
+                          cancelled = true;
+                          setDownloadCancelled(true);
+                          setIsDownloading(false);
+                        }, 30000); // 30s máximo
+                        const response = await responsePromise;
+                        clearTimeout(timeout);
+                        if (!response.ok) {
+                          throw new Error(`HTTP error! status: ${response.status}`);
+                        }
+                        const blob = await response.blob();
+                        const url = window.URL.createObjectURL(blob);
+                        const link = document.createElement('a');
+                        link.href = url;
+                        link.download = filename;
+                        document.body.appendChild(link);
+                        link.click();
+                        document.body.removeChild(link);
+                        window.URL.revokeObjectURL(url);
+                        setIsDownloading(false);
+                      } catch (error) {
+                        setIsDownloading(false);
+                        if (cancelled || (error && error.name === 'AbortError')) {
+                          setDownloadCancelled(true);
+                        } else {
+                          console.error('Download failed:', error);
+                          alert('Error al descargar el archivo');
+                        }
+                      }
                     }}
                   >
-                    <Download className="w-4 h-4 mr-2" />
-                    {t('download')}
+                    {isDownloading ? (
+                      <span className="absolute left-2 top-1/2 -translate-y-1/2">
+                        <Download className="w-4 h-4 animate-spin text-purple-700" />
+                      </span>
+                    ) : (
+                      <Download className="w-4 h-4 mr-2" />
+                    )}
+                    {isDownloading ? t('downloading') : t('download')}
                   </Button>
+                  {downloadCancelled && (
+                    <div className="absolute left-1/2 -translate-x-1/2 -top-10 bg-black/60 backdrop-blur-sm text-white px-4 py-2 rounded shadow-lg z-50 animate-fade-in-out text-sm">
+                      Download cancelled
+                    </div>
+                  )}
                 </div>
 
                 {/* Artist section */}
