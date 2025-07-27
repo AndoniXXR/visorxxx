@@ -36,6 +36,30 @@ html {
         `}</style>
       </head>
       <body suppressHydrationWarning>
+        <script dangerouslySetInnerHTML={{__html: `
+          (function() {
+            if (typeof window !== 'undefined') {
+              let modalOpen = false;
+              window.addEventListener('modalOpen', function() {
+                modalOpen = true;
+                window.history.pushState({modal: true}, '');
+              });
+              window.addEventListener('modalClose', function() {
+                modalOpen = false;
+                if (window.history.state && window.history.state.modal) {
+                  window.history.back();
+                }
+              });
+              window.addEventListener('popstate', function(e) {
+                if (modalOpen && window.history.state && window.history.state.modal) {
+                  const closeEvent = new Event('closeModalFromBack');
+                  window.dispatchEvent(closeEvent);
+                  modalOpen = false;
+                }
+              });
+            }
+          })();
+        `}} />
         <ThemeProvider attribute="class" defaultTheme="dark" enableSystem={false}>
           <LanguageProvider>
             {children}

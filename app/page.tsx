@@ -71,6 +71,16 @@ export default function Home() {
   const [navigationMessage, setNavigationMessage] = useState<string | null>(null);
   const [isTransitioning, setIsTransitioning] = useState(false);
   const [nextPost, setNextPost] = useState<ApiPost | null>(null);
+  // Cierra el modal si se recibe el evento 'closeModalFromBack' (back button móvil)
+  useEffect(() => {
+    function handleCloseModalFromBack() {
+      setSelectedPost(null);
+    }
+    window.addEventListener('closeModalFromBack', handleCloseModalFromBack);
+    return () => {
+      window.removeEventListener('closeModalFromBack', handleCloseModalFromBack);
+    };
+  }, []);
 
   // Refs para debounce de navegación
   const lastKeyPressTime = useRef(0);
@@ -883,6 +893,16 @@ export default function Home() {
         <DialogContent className="max-w-[98%] sm:max-w-3xl h-[95vh] sm:h-[90vh] p-2 sm:p-4 overflow-auto">
           {selectedPost && (
             <>
+              {/* Botón X para cerrar el post, visible en móvil y desktop */}
+              <button
+                type="button"
+                aria-label="Cerrar"
+                onClick={() => setSelectedPost(null)}
+                className="absolute top-2 right-2 z-50 bg-black/60 hover:bg-black/80 text-white rounded-full p-2 focus:outline-none focus:ring-2 focus:ring-purple-500"
+                style={{ fontSize: 22 }}
+              >
+                <X className="w-6 h-6" />
+              </button>
               {(() => {
                 console.log('[POST ARTISTS]', selectedPost.artists);
                 return null;
