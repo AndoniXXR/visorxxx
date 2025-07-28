@@ -4,7 +4,7 @@ import { useState, useRef, useEffect, useCallback } from "react";
 import {
   Search, X, ImageIcon, FileImage, Tag, User, Calendar, TrendingUp, 
   Shuffle, Clock, Copy, Download, ChevronLeft, ChevronRight, ChevronUp, 
-  Plus, Minus, History, ChevronFirst, ChevronLast, RefreshCw, Settings
+  Plus, Minus, History, ChevronFirst, ChevronLast, RefreshCw, Settings, Info
 } from "lucide-react";
 import { VideoPlayer } from "@/app/components/video-player";
 import { Input } from "@/components/ui/input";
