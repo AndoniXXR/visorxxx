@@ -46,6 +46,7 @@ function copyToClipboard(text: string) {
 }
 
 export default function Home() {
+  const [postType, setPostType] = useState("all");
   const { t } = useLanguage();
   const [loading, setLoading] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
@@ -71,6 +72,25 @@ export default function Home() {
   const [navigationMessage, setNavigationMessage] = useState<string | null>(null);
   const [isTransitioning, setIsTransitioning] = useState(false);
   const [nextPost, setNextPost] = useState<ApiPost | null>(null);
+
+  // Cargar historial desde localStorage al montar
+  useEffect(() => {
+    const savedHistory = localStorage.getItem('searchHistory');
+    if (savedHistory) {
+      try {
+        setSearchHistory(JSON.parse(savedHistory));
+      } catch {}
+    }
+  }, []);
+
+  // Guardar historial en localStorage cada vez que cambie
+  useEffect(() => {
+    localStorage.setItem('searchHistory', JSON.stringify(searchHistory));
+  }, [searchHistory]);
+  // Resetear página al cambiar de fuente
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [selectedSource]);
   // Cierra el modal si se recibe el evento 'closeModalFromBack' (back button móvil)
   useEffect(() => {
     function handleCloseModalFromBack() {
@@ -453,6 +473,7 @@ export default function Home() {
         className="w-full flex flex-col gap-4 mb-8"
       >
         <div className="flex flex-col sm:flex-row gap-4">
+          {/* Barra de búsqueda */}
           <div className="flex flex-1 relative min-w-0">
             <div className="relative w-full">
               <Input
@@ -519,6 +540,7 @@ export default function Home() {
             </div>
           </div>
 
+          {/* Fuente */}
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
               <Button
@@ -545,6 +567,7 @@ export default function Home() {
             </DropdownMenuContent>
           </DropdownMenu>
 
+          {/* Ordenar por */}
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
               <Button
@@ -589,7 +612,7 @@ export default function Home() {
             </DropdownMenuContent>
           </DropdownMenu>
 
-          {/* Filter Dropdown */}
+          {/* Filtro */}
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
               <Button
@@ -635,6 +658,32 @@ export default function Home() {
             </DropdownMenuContent>
           </DropdownMenu>
 
+          {/* Tipo de post (nuevo) */}
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button
+                variant="outline"
+                className="min-w-[140px] justify-between hover:bg-purple-500/20"
+              >
+                <span>Tipo de post</span>
+                <ChevronUp className="w-4 h-4 ml-2" />
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="start" className="w-[180px]">
+              <DropdownMenuLabel>Tipo de post</DropdownMenuLabel>
+              <DropdownMenuSeparator />
+              <DropdownMenuRadioGroup value="all" onValueChange={() => {}}>
+                <DropdownMenuRadioGroup value={postType} onValueChange={setPostType}>
+                  <DropdownMenuRadioItem value="all">Mostrar todo (default)</DropdownMenuRadioItem>
+                  <DropdownMenuRadioItem value="image">Solo imágenes</DropdownMenuRadioItem>
+                  <DropdownMenuRadioItem value="video">Solo videos</DropdownMenuRadioItem>
+                  <DropdownMenuRadioItem value="gif">Solo GIF</DropdownMenuRadioItem>
+                </DropdownMenuRadioGroup>
+              </DropdownMenuRadioGroup>
+            </DropdownMenuContent>
+          </DropdownMenu>
+
+          {/* Historial */}
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
               <Button
@@ -694,6 +743,7 @@ export default function Home() {
             </DropdownMenuContent>
           </DropdownMenu>
 
+          {/* Botón de búsqueda */}
           <Button
             type="submit"
             onClick={handleSearchSubmit}
@@ -742,7 +792,14 @@ export default function Home() {
         <>
           {/* Grid */}
           <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-4">
-            {posts.map((post, index) => (
+            {(postType === "video"
+              ? posts.filter(post => getPostType(post) === "video")
+              : postType === "image"
+                ? posts.filter(post => getPostType(post) === "image")
+                : postType === "gif"
+                  ? posts.filter(post => getPostType(post) === "gif")
+                  : posts
+            ).map((post, index) => (
               <Card 
                 key={post.id} 
                 className="overflow-hidden group relative cursor-pointer"
@@ -901,7 +958,7 @@ export default function Home() {
                 className="absolute top-2 right-2 z-50 bg-black/60 hover:bg-black/80 text-white rounded-full p-2 focus:outline-none focus:ring-2 focus:ring-purple-500"
                 style={{ fontSize: 22 }}
               >
-                <X className="w-6 h-6" />
+                <X className="w-6 h-6" strokeWidth={2.5} color="white" style={{ filter: 'none', opacity: 1 }} />
               </button>
               {(() => {
                 console.log('[POST ARTISTS]', selectedPost.artists);
@@ -1454,6 +1511,38 @@ export default function Home() {
                       ))}
                     </div>
                   )}
+                </div>
+                {/* Detalles del post */}
+                <div className="mt-8 p-4 rounded-lg bg-purple-950/10 border border-purple-900/20">
+                  <h3 className="text-lg font-semibold mb-3 flex items-center gap-2 text-purple-700">
+                    <Info className="w-5 h-5" />
+                    Detalles del post
+                  </h3>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-8 gap-y-2 text-sm">
+                    <div><span className="font-medium text-purple-600">ID:</span> {selectedPost.id}</div>
+                    <div><span className="font-medium text-purple-600">Fuente:</span> {selectedPost.source}</div>
+                    {selectedPost.created_at && (
+                      <div><span className="font-medium text-purple-600">Fecha:</span> {new Date(selectedPost.created_at).toLocaleString('es-ES')}</div>
+                    )}
+                    {selectedPost.uploader_id && (
+                      <div><span className="font-medium text-purple-600">Uploader ID:</span> {selectedPost.uploader_id}</div>
+                    )}
+                    {selectedPost.score !== undefined && (
+                      <div><span className="font-medium text-purple-600">Score:</span> {selectedPost.score}</div>
+                    )}
+                    {selectedPost.fav_count !== undefined && (
+                      <div><span className="font-medium text-purple-600">Favoritos:</span> {selectedPost.fav_count}</div>
+                    )}
+                    {selectedPost.rating && (
+                      <div><span className="font-medium text-purple-600">Rating:</span> {selectedPost.rating}</div>
+                    )}
+                    {selectedPost.sources && selectedPost.sources.length > 0 && (
+                      <div className="col-span-2"><span className="font-medium text-purple-600">Sources:</span> {selectedPost.sources.join(', ')}</div>
+                    )}
+                    {selectedPost.description && (
+                      <div className="col-span-2"><span className="font-medium text-purple-600">Descripción:</span> {selectedPost.description}</div>
+                    )}
+                  </div>
                 </div>
               </div>
             </>

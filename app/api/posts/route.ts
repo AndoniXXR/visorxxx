@@ -122,7 +122,7 @@ const SOURCES = {
     params: (tags: string, page: number) => ({
       tags,
       page,
-      limit: 20,
+      limit: 75,
     }),
     headers: {
       'User-Agent': 'dark-post-viewer/1.0 (by user on GitHub Copilot)'
@@ -192,7 +192,7 @@ const SOURCES = {
     params: (tags: string, page: number) => ({
       tags,
       pid: page - 1,
-      limit: 20,
+      limit: 75,
       json: 1,
     }),
     headers: {}
@@ -258,7 +258,7 @@ const SOURCES = {
     params: (tags: string, page: number) => ({
       tags,
       pid: page - 1,
-      limit: 20,
+      limit: 75,
       json: 1,
     }),
     headers: {}
