@@ -21,6 +21,7 @@ import {
 import { fetchPostsFromApi, ApiPost, PostSource } from "@/lib/api";
 import { useLanguage } from "@/contexts/LanguageContext";
 import { LanguageSelector } from "@/components/LanguageSelector";
+import { ThemeToggleButton } from "./ThemeToggleButton";
 
 // Constants
 const SOURCES: { label: string; value: PostSource }[] = [
@@ -45,6 +46,7 @@ function copyToClipboard(text: string) {
 }
 
 export default function Home() {
+  const [postType, setPostType] = useState("all");
   const { t } = useLanguage();
   const [loading, setLoading] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
@@ -62,12 +64,43 @@ export default function Home() {
   const [hasInitialSearch, setHasInitialSearch] = useState(true);
   const [showCopyMessage, setShowCopyMessage] = useState(false);
   const [showArtistCopyMessage, setShowArtistCopyMessage] = useState(false);
+  const [isDownloading, setIsDownloading] = useState(false);
+  const [downloadCancelled, setDownloadCancelled] = useState(false);
   const [searchHistory, setSearchHistory] = useState<{terms: string[], source: PostSource, timestamp: number}[]>([]);
   const [currentPostIndex, setCurrentPostIndex] = useState(0);
   const [pageInput, setPageInput] = useState("");
   const [navigationMessage, setNavigationMessage] = useState<string | null>(null);
   const [isTransitioning, setIsTransitioning] = useState(false);
   const [nextPost, setNextPost] = useState<ApiPost | null>(null);
+
+  // Cargar historial desde localStorage al montar
+  useEffect(() => {
+    const savedHistory = localStorage.getItem('searchHistory');
+    if (savedHistory) {
+      try {
+        setSearchHistory(JSON.parse(savedHistory));
+      } catch {}
+    }
+  }, []);
+
+  // Guardar historial en localStorage cada vez que cambie
+  useEffect(() => {
+    localStorage.setItem('searchHistory', JSON.stringify(searchHistory));
+  }, [searchHistory]);
+  // Resetear página al cambiar de fuente
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [selectedSource]);
+  // Cierra el modal si se recibe el evento 'closeModalFromBack' (back button móvil)
+  useEffect(() => {
+    function handleCloseModalFromBack() {
+      setSelectedPost(null);
+    }
+    window.addEventListener('closeModalFromBack', handleCloseModalFromBack);
+    return () => {
+      window.removeEventListener('closeModalFromBack', handleCloseModalFromBack);
+    };
+  }, []);
 
   // Refs para debounce de navegación
   const lastKeyPressTime = useRef(0);
@@ -86,14 +119,15 @@ export default function Home() {
           orderBy,
           filterBy,
         });
-        console.log('Got posts:', { count: posts?.length });
-        if (!posts || posts.length === 0) {
+        // Si la respuesta es un objeto con posts, usa posts.posts
+        let postsArray = Array.isArray(posts) ? posts : (Array.isArray(posts?.posts) ? posts.posts : []);
+        console.log('Got posts:', { count: postsArray?.length });
+        if (!postsArray || postsArray.length === 0) {
           setError(t('noResults'));
           setPosts([]);
         } else {
           setError(null);
-          setPosts(posts);
-          
+          setPosts(postsArray);
           // Add to search history if there are search terms
           if (searchTerms.length > 0) {
             const newEntry = {
@@ -101,7 +135,6 @@ export default function Home() {
               source: selectedSource,
               timestamp: Date.now()
             };
-            
             setSearchHistory(prev => {
               // Remove duplicates and keep only last 10 searches
               const filtered = prev.filter(entry => 
@@ -181,7 +214,7 @@ export default function Home() {
       try {
         const response = await fetch(`/api/posts/suggestions?term=${searchValue}&source=${selectedSource}`);
         const data = await response.json();
-        setSuggestions(data);
+        setSuggestions(Array.isArray(data) ? data : []);
       } catch (error) {
         console.error('Error fetching suggestions:', error);
         setSuggestions([]);
@@ -386,8 +419,36 @@ export default function Home() {
     setCurrentPostIndex(index);
   };
 
+  // Fetch posts from the new API route
+  useEffect(() => {
+    const fetchPosts = async () => {
+      setLoading(true);
+      setError(null);
+      try {
+        const response = await fetch("/api/posts");
+        if (!response.ok) {
+          throw new Error("Failed to fetch posts");
+        }
+        const data = await response.json();
+        setPosts(data);
+      } catch (err) {
+        setError(err.message);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchPosts();
+  }, []);
+
   return (
     <main className="flex flex-col items-stretch min-h-screen w-full max-w-7xl mx-auto p-4 relative">
+      {/* Theme Toggle Button en la esquina superior derecha, solo si no hay post seleccionado */}
+      {!selectedPost && (
+        <div style={{ position: 'absolute', top: 16, right: 16, zIndex: 1000 }}>
+          <ThemeToggleButton />
+        </div>
+      )}
       {/* Top Navigation Bar */}
       <div className="flex justify-between items-center mb-4">
         <div className="flex items-center gap-2">
@@ -401,7 +462,8 @@ export default function Home() {
           {navigationMessage}
         </div>
       )}
-      
+
+
       {/* Search Form */}
       <form
         onSubmit={(e) => {
@@ -411,6 +473,7 @@ export default function Home() {
         className="w-full flex flex-col gap-4 mb-8"
       >
         <div className="flex flex-col sm:flex-row gap-4">
+          {/* Barra de búsqueda */}
           <div className="flex flex-1 relative min-w-0">
             <div className="relative w-full">
               <Input
@@ -439,7 +502,6 @@ export default function Home() {
                   </button>
                 )}
               </div>
-              
               {/* Sugerencias */}
               {searchValue && (
                 <Card className="absolute w-full mt-1 z-50 max-h-60">
@@ -451,18 +513,24 @@ export default function Home() {
                     />
                     <CommandList className="max-h-48 overflow-y-auto">
                       <CommandGroup>
-                        {suggestions?.map((tag) => (
-                          <CommandItem
-                            key={tag}
-                            value={tag}
-                            onSelect={() => {
-                              addSearchTerm(tag);
-                            }}
-                            className="cursor-pointer"
-                          >
-                            <Tag className="w-4 h-4 mr-2" />
-                            {tag}
-                          </CommandItem>
+                        {loadingSuggestions ? (
+                          <div className="px-4 py-2 text-sm text-muted-foreground">Buscando...</div>
+                        ) : (Array.isArray(suggestions) && suggestions.length === 0 ? (
+                          <div className="px-4 py-2 text-sm text-muted-foreground">No hay coincidencias</div>
+                        ) : (
+                          (Array.isArray(suggestions) ? suggestions : []).map((tag) => (
+                            <CommandItem
+                              key={tag}
+                              value={tag}
+                              onSelect={() => {
+                                addSearchTerm(tag);
+                              }}
+                              className="cursor-pointer"
+                            >
+                              <Tag className="w-4 h-4 mr-2" />
+                              {tag}
+                            </CommandItem>
+                          ))
                         ))}
                       </CommandGroup>
                     </CommandList>
@@ -472,6 +540,7 @@ export default function Home() {
             </div>
           </div>
 
+          {/* Fuente */}
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
               <Button
@@ -498,6 +567,7 @@ export default function Home() {
             </DropdownMenuContent>
           </DropdownMenu>
 
+          {/* Ordenar por */}
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
               <Button
@@ -542,7 +612,7 @@ export default function Home() {
             </DropdownMenuContent>
           </DropdownMenu>
 
-          {/* Filter Dropdown */}
+          {/* Filtro */}
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
               <Button
@@ -588,6 +658,32 @@ export default function Home() {
             </DropdownMenuContent>
           </DropdownMenu>
 
+          {/* Tipo de post (nuevo) */}
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button
+                variant="outline"
+                className="min-w-[140px] justify-between hover:bg-purple-500/20"
+              >
+                <span>Tipo de post</span>
+                <ChevronUp className="w-4 h-4 ml-2" />
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="start" className="w-[180px]">
+              <DropdownMenuLabel>Tipo de post</DropdownMenuLabel>
+              <DropdownMenuSeparator />
+              <DropdownMenuRadioGroup value="all" onValueChange={() => {}}>
+                <DropdownMenuRadioGroup value={postType} onValueChange={setPostType}>
+                  <DropdownMenuRadioItem value="all">Mostrar todo (default)</DropdownMenuRadioItem>
+                  <DropdownMenuRadioItem value="image">Solo imágenes</DropdownMenuRadioItem>
+                  <DropdownMenuRadioItem value="video">Solo videos</DropdownMenuRadioItem>
+                  <DropdownMenuRadioItem value="gif">Solo GIF</DropdownMenuRadioItem>
+                </DropdownMenuRadioGroup>
+              </DropdownMenuRadioGroup>
+            </DropdownMenuContent>
+          </DropdownMenu>
+
+          {/* Historial */}
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
               <Button
@@ -647,6 +743,7 @@ export default function Home() {
             </DropdownMenuContent>
           </DropdownMenu>
 
+          {/* Botón de búsqueda */}
           <Button
             type="submit"
             onClick={handleSearchSubmit}
@@ -695,7 +792,14 @@ export default function Home() {
         <>
           {/* Grid */}
           <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-4">
-            {posts.map((post, index) => (
+            {(postType === "video"
+              ? posts.filter(post => getPostType(post) === "video")
+              : postType === "image"
+                ? posts.filter(post => getPostType(post) === "image")
+                : postType === "gif"
+                  ? posts.filter(post => getPostType(post) === "gif")
+                  : posts
+            ).map((post, index) => (
               <Card 
                 key={post.id} 
                 className="overflow-hidden group relative cursor-pointer"
@@ -846,6 +950,16 @@ export default function Home() {
         <DialogContent className="max-w-[98%] sm:max-w-3xl h-[95vh] sm:h-[90vh] p-2 sm:p-4 overflow-auto">
           {selectedPost && (
             <>
+              {/* Botón X para cerrar el post, visible en móvil y desktop */}
+              <button
+                type="button"
+                aria-label="Cerrar"
+                onClick={() => setSelectedPost(null)}
+                className="absolute top-2 right-2 z-50 bg-black/60 hover:bg-black/80 text-white rounded-full p-2 focus:outline-none focus:ring-2 focus:ring-purple-500"
+                style={{ fontSize: 22 }}
+              >
+                <X className="w-6 h-6" strokeWidth={2.5} color="white" style={{ filter: 'none', opacity: 1 }} />
+              </button>
               {(() => {
                 console.log('[POST ARTISTS]', selectedPost.artists);
                 return null;
@@ -994,28 +1108,70 @@ export default function Home() {
                   )}
                   <Button
                     variant="outline"
-                    className="flex-1 hover:bg-purple-500/20"
-                    onClick={() => {
+                    className={`flex-1 hover:bg-purple-500/20 relative ${isDownloading ? 'opacity-60 cursor-not-allowed' : ''}`}
+                    disabled={isDownloading}
+                    onClick={async () => {
                       if (!selectedPost?.file_url) return;
-                      // Detectar extensión
+                      setIsDownloading(true);
+                      setDownloadCancelled(false);
                       let ext = 'file';
                       if (selectedPost.file_url.includes('.')) {
                         ext = selectedPost.file_url.split('.').pop()?.split('?')[0] || 'file';
                       }
                       const filename = `post_${selectedPost.id}.${ext}`;
-                      // Usar el endpoint proxy del backend para descargar
-                      const proxyUrl = `/api/download?url=${encodeURIComponent(selectedPost.file_url)}`;
-                      const link = document.createElement('a');
-                      link.href = proxyUrl;
-                      link.download = filename;
-                      document.body.appendChild(link);
-                      link.click();
-                      document.body.removeChild(link);
+                      let cancelled = false;
+                      try {
+                        const controller = new AbortController();
+                        // Descargar usando el endpoint backend para evitar CSP
+                        const responsePromise = fetch(`/api/download?url=${encodeURIComponent(selectedPost.file_url)}`, { signal: controller.signal });
+                        // Si el usuario cierra la ventana de descarga, cancelar
+                        const timeout = setTimeout(() => {
+                          if (!isDownloading) return;
+                          controller.abort();
+                          cancelled = true;
+                          setDownloadCancelled(true);
+                          setIsDownloading(false);
+                        }, 30000); // 30s máximo
+                        const response = await responsePromise;
+                        clearTimeout(timeout);
+                        if (!response.ok) {
+                          throw new Error(`HTTP error! status: ${response.status}`);
+                        }
+                        const blob = await response.blob();
+                        const url = window.URL.createObjectURL(blob);
+                        const link = document.createElement('a');
+                        link.href = url;
+                        link.download = filename;
+                        document.body.appendChild(link);
+                        link.click();
+                        document.body.removeChild(link);
+                        window.URL.revokeObjectURL(url);
+                        setIsDownloading(false);
+                      } catch (error) {
+                        setIsDownloading(false);
+                        if (cancelled || (error && error.name === 'AbortError')) {
+                          setDownloadCancelled(true);
+                        } else {
+                          console.error('Download failed:', error);
+                          alert('Error al descargar el archivo');
+                        }
+                      }
                     }}
                   >
-                    <Download className="w-4 h-4 mr-2" />
-                    {t('download')}
+                    {isDownloading ? (
+                      <span className="absolute left-2 top-1/2 -translate-y-1/2">
+                        <Download className="w-4 h-4 animate-spin text-purple-700" />
+                      </span>
+                    ) : (
+                      <Download className="w-4 h-4 mr-2" />
+                    )}
+                    {isDownloading ? t('downloading') : t('download')}
                   </Button>
+                  {downloadCancelled && (
+                    <div className="absolute left-1/2 -translate-x-1/2 -top-10 bg-black/60 backdrop-blur-sm text-white px-4 py-2 rounded shadow-lg z-50 animate-fade-in-out text-sm">
+                      Download cancelled
+                    </div>
+                  )}
                 </div>
 
                 {/* Artist section */}
@@ -1355,6 +1511,38 @@ export default function Home() {
                       ))}
                     </div>
                   )}
+                </div>
+                {/* Detalles del post */}
+                <div className="mt-8 p-4 rounded-lg bg-purple-950/10 border border-purple-900/20">
+                  <h3 className="text-lg font-semibold mb-3 flex items-center gap-2 text-purple-700">
+                    <Info className="w-5 h-5" />
+                    Detalles del post
+                  </h3>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-8 gap-y-2 text-sm">
+                    <div><span className="font-medium text-purple-600">ID:</span> {selectedPost.id}</div>
+                    <div><span className="font-medium text-purple-600">Fuente:</span> {selectedPost.source}</div>
+                    {selectedPost.created_at && (
+                      <div><span className="font-medium text-purple-600">Fecha:</span> {new Date(selectedPost.created_at).toLocaleString('es-ES')}</div>
+                    )}
+                    {selectedPost.uploader_id && (
+                      <div><span className="font-medium text-purple-600">Uploader ID:</span> {selectedPost.uploader_id}</div>
+                    )}
+                    {selectedPost.score !== undefined && (
+                      <div><span className="font-medium text-purple-600">Score:</span> {selectedPost.score}</div>
+                    )}
+                    {selectedPost.fav_count !== undefined && (
+                      <div><span className="font-medium text-purple-600">Favoritos:</span> {selectedPost.fav_count}</div>
+                    )}
+                    {selectedPost.rating && (
+                      <div><span className="font-medium text-purple-600">Rating:</span> {selectedPost.rating}</div>
+                    )}
+                    {selectedPost.sources && selectedPost.sources.length > 0 && (
+                      <div className="col-span-2"><span className="font-medium text-purple-600">Sources:</span> {selectedPost.sources.join(', ')}</div>
+                    )}
+                    {selectedPost.description && (
+                      <div className="col-span-2"><span className="font-medium text-purple-600">Descripción:</span> {selectedPost.description}</div>
+                    )}
+                  </div>
                 </div>
               </div>
             </>

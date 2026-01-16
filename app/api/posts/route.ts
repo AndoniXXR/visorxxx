@@ -122,7 +122,7 @@ const SOURCES = {
     params: (tags: string, page: number) => ({
       tags,
       page,
-      limit: 20,
+      limit: 75,
     }),
     headers: {
       'User-Agent': 'dark-post-viewer/1.0 (by user on GitHub Copilot)'
@@ -192,7 +192,7 @@ const SOURCES = {
     params: (tags: string, page: number) => ({
       tags,
       pid: page - 1,
-      limit: 20,
+      limit: 75,
       json: 1,
     }),
     headers: {}
@@ -258,7 +258,7 @@ const SOURCES = {
     params: (tags: string, page: number) => ({
       tags,
       pid: page - 1,
-      limit: 20,
+      limit: 75,
       json: 1,
     }),
     headers: {}
@@ -390,17 +390,14 @@ export async function GET(req: NextRequest) {
       maxContentLength: 10 * 1024 * 1024, // 10MB max response
     });
     const posts = Array.isArray(data.posts) ? data.posts : data;
-    
     // Handle async mapping
     const mapped = await Promise.all(posts.map(map));
-    
     // Filter out posts without valid preview URLs
     const validPosts = mapped.filter(post => 
       post.preview_url && 
       post.preview_url !== '' && 
       (post.file_url || post.sample_url)
     );
-    
     return new Response(JSON.stringify(validPosts), {
       status: 200,
       headers: { 
@@ -413,11 +410,11 @@ export async function GET(req: NextRequest) {
       },
     });
   } catch (e: any) {
-    // Don't expose internal error details
+    // No error 500: responde con posts vacíos y mensaje claro
     console.error('[API ERROR]', { source, tags, page, error: e.message });
-    return new Response(JSON.stringify({ error: "Service temporarily unavailable" }), { 
-      status: 500,
-      headers: { 
+    return new Response(JSON.stringify({ error: "No se encontraron resultados o la fuente está temporalmente no disponible", posts: [] }), {
+      status: 200,
+      headers: {
         "Content-Type": "application/json",
         "X-Content-Type-Options": "nosniff"
       }

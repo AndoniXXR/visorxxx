@@ -10,7 +10,7 @@ export function middleware(request: NextRequest) {
       "default-src 'self'",
       "script-src 'self' 'unsafe-inline' 'unsafe-eval'", // Next.js requires unsafe-inline/eval
       "style-src 'self' 'unsafe-inline'", // Tailwind requires unsafe-inline
-      "img-src 'self' data: https://static1.e621.net https://img.rule34.xxx https://us.rule34.xxx https://api-cdn.rule34.xxx https://img.xbooru.com",
+      "img-src 'self' data: https://static1.e621.net https://img.rule34.xxx https://us.rule34.xxx https://api-cdn.rule34.xxx https://img.xbooru.com https://xbooru.com",
       "media-src 'self' https://static1.e621.net https://img.rule34.xxx https://us.rule34.xxx https://api-cdn.rule34.xxx https://api-cdn-mp4.rule34.xxx https://img.xbooru.com",
       "connect-src 'self' https://e621.net https://api.rule34.xxx https://xbooru.com",
       "font-src 'self' data:",
